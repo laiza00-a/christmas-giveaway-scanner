@@ -1,0 +1,245 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Christmas Giveaway QR Scanner Test</title>
+
+  <!-- QR scanning library -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 20px 14px;
+      background: #f4f5f4;
+      font-family: Arial, sans-serif;
+      color: #222;
+    }
+
+    .container {
+      max-width: 480px;
+      margin: 20px auto;
+      padding: 22px;
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 3px 14px rgba(0,0,0,.08);
+    }
+
+    h1 {
+      text-align: center;
+      color: #176b45;
+      font-size: 24px;
+    }
+
+    p { line-height: 1.5; }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      margin-top: 12px;
+      border: 0;
+      border-radius: 8px;
+      background: #176b45;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button.secondary { background: #555; }
+    button:disabled { opacity: .55; cursor: wait; }
+
+    #reader {
+      width: 100%;
+      margin-top: 18px;
+    }
+
+    #status, #result {
+      padding: 12px;
+      margin-top: 16px;
+      border-radius: 8px;
+      overflow-wrap: anywhere;
+    }
+
+    #status { background: #f1f1f1; }
+    #result { background: #e8f5ec; }
+    #scannedValue {
+      display: block;
+      margin-top: 8px;
+      font-weight: bold;
+      font-size: 20px;
+      overflow-wrap: anywhere;
+    }
+
+    .hidden { display: none; }
+    .hint { color: #666; font-size: 13px; }
+  </style>
+</head>
+
+<body>
+  <main class="container">
+    <h1>🎄 Christmas Giveaway</h1>
+    <p>Camera scanner test. Point your camera at one of your existing printed ticket QR codes.</p>
+
+    <button id="startButton" type="button">Start Camera Scanner</button>
+    <button id="stopButton" class="secondary" type="button" disabled>
+      Stop Camera
+    </button>
+
+    <div id="reader"></div>
+
+    <div id="status" role="status" aria-live="polite">
+      Ready. Tap Start Camera Scanner to begin.
+    </div>
+
+    <div id="result" class="hidden">
+      <strong>QR code detected!</strong>
+      <span id="scannedValue"></span>
+      <button id="scanAgainButton" type="button">Scan Another QR</button>
+    </div>
+
+    <p class="hint">
+      This is a test only. It does not access or change your giveaway spreadsheet.
+    </p>
+  </main>
+
+  <script>
+    const startButton = document.getElementById("startButton");
+    const stopButton = document.getElementById("stopButton");
+    const statusBox = document.getElementById("status");
+    const resultBox = document.getElementById("result");
+    const scannedValue = document.getElementById("scannedValue");
+
+    let scanner = null;
+    let scannerRunning = false;
+    let starting = false;
+
+    function showStatus(message) {
+      statusBox.textContent = message;
+    }
+
+    async function stopScanner() {
+      if (!scanner || !scannerRunning) return;
+
+      try {
+        await scanner.stop();
+        scanner.clear();
+      } catch (error) {
+        console.warn("Scanner stop:", error);
+      }
+
+      scannerRunning = false;
+      scanner = null;
+      starting = false;
+      startButton.disabled = false;
+      stopButton.disabled = true;
+      showStatus("Camera stopped.");
+    }
+
+    async function startScanner() {
+      if (starting || scannerRunning) return;
+
+      if (!window.Html5Qrcode) {
+        showStatus("The scanner library did not load. Check your internet connection and reload this page.");
+        return;
+      }
+
+      starting = true;
+      startButton.disabled = true;
+      resultBox.classList.add("hidden");
+      showStatus("Requesting camera access...");
+
+      try {
+        scanner = new Html5Qrcode("reader");
+
+        const config = {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0
+        };
+
+        const onSuccess = async (decodedText) => {
+          if (!scannerRunning) return;
+
+          scannedValue.textContent = decodedText;
+          resultBox.classList.remove("hidden");
+          showStatus("QR code scanned successfully.");
+
+          await stopScanner();
+          showStatus("QR code scanned successfully. The value is displayed below.");
+        };
+
+        const onScanFailure = () => {
+          // No QR found in this frame; continue scanning.
+        };
+
+        try {
+          await scanner.start(
+            { facingMode: "environment" },
+            config,
+            onSuccess,
+            onScanFailure
+          );
+        } catch (firstError) {
+          // Fallback: try enumerating available cameras.
+          const cameras = await Html5Qrcode.getCameras();
+
+          if (!cameras || cameras.length === 0) {
+            throw firstError;
+          }
+
+          const backCamera =
+            cameras.find(camera => /back|rear|environment/i.test(camera.label)) ||
+            cameras[cameras.length - 1];
+
+          await scanner.start(
+            backCamera.id,
+            config,
+            onSuccess,
+            onScanFailure
+          );
+        }
+
+        scannerRunning = true;
+        starting = false;
+        stopButton.disabled = false;
+        showStatus("Camera is running. Point it at a QR code.");
+
+      } catch (error) {
+        console.error("Camera scanner error:", error);
+
+        if (scanner) {
+          try { scanner.clear(); } catch (ignored) {}
+        }
+
+        scanner = null;
+        scannerRunning = false;
+        starting = false;
+        startButton.disabled = false;
+        stopButton.disabled = true;
+
+        const detail = error && error.message
+          ? error.message
+          : String(error);
+
+        showStatus(
+          "Could not start camera: " + detail +
+          ". Make sure this page uses HTTPS, allow camera access, and close other apps using the camera."
+        );
+      }
+    }
+
+    startButton.addEventListener("click", startScanner);
+    stopButton.addEventListener("click", stopScanner);
+
+    document.getElementById("scanAgainButton").addEventListener("click", () => {
+      resultBox.classList.add("hidden");
+      startScanner();
+    });
+  </script>
+</body>
+</html>
