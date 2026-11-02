@@ -54,6 +54,43 @@ async function api(action, values = {}) {
 function setMessage(text,kind=''){info.textContent=text;info.className='msg '+kind}
 async function stopScanner(){if(scanner&&scanning){try{await scanner.stop()}catch(e){}scanning=false}}
 async function handleScan(decodedText){if(busy)return;const id=String(decodedText||'').trim().toUpperCase();if(!/^PFGJI-[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(id)){setMessage('This QR does not look like a valid giveaway voucher. Please scan the QR code printed on your voucher.','error');return}busy=true;await stopScanner();qrInput.value=id;validVoucher=false;registerButton.disabled=true;setMessage('Checking voucher...');try{const result=await api('lookup',{qrId:id});if(!result.success){setMessage(result.message||'Voucher could not be verified.','error');return}validVoucher=true;registerButton.disabled=false;setMessage('Voucher verified. Customer type: '+result.customerType+'. Enter your full name, then tap Register.','success');nameInput.focus()}catch(e){setMessage(e.message,'error')}finally{busy=false}}
-document.getElementById('startScan').addEventListener('click',async()=>{if(!window.Html5Qrcode){setMessage('Scanner library did not load. Refresh the page or enter the voucher QR ID manually is not available on this page.','error');return}try{if(!scanner)scanner=new Html5Qrcode('reader');await scanner.start({facingMode:'environment'},{fps:10,qrbox:{width:250,height:250}},handleScan,()=>{});scanning=true;setMessage('Camera started. Point it at the QR code on your voucher.')}catch(e){setMessage('Camera could not start. Allow camera access in your browser and use HTTPS. '+e,'error')}});
+
+document.getElementById('startScan').addEventListener('click', async () => {
+  const button = document.getElementById('startScan');
+
+  if (!window.Html5Qrcode) {
+    setMessage(
+      'Scanner library did not load. Please refresh the page.',
+      'error'
+    );
+    return;
+  }
+
+  try {
+    button.disabled = true;
+
+    if (!scanner) {
+      scanner = new Html5Qrcode('reader');
+    }
+
+    await scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      handleScan,
+      () => {}
+    );
+
+    scanning = true;
+    setMessage('Camera started. Point it at your voucher QR code.');
+  } catch (error) {
+    setMessage(
+      'Camera could not start. Check camera permission and try Safari or Chrome.',
+      'error'
+    );
+  } finally {
+    button.disabled = false;
+  }
+});
+
 registerButton.addEventListener('click',async()=>{if(busy)return;const id=qrInput.value.trim().toUpperCase(),name=nameInput.value.trim().replace(/\s+/g,' ');if(!validVoucher||!id){setMessage('Please scan and verify your voucher first.','error');return}if(name.length<2||name.length>100){setMessage('Enter your full name (2–100 characters).','error');return}busy=true;registerButton.disabled=true;registerButton.textContent='Registering...';try{const result=await api('register',{qrId:id,name});setMessage(result.message||'Registration finished.',result.success?'success':'error');if(result.success){nameInput.disabled=true;qrInput.disabled=true;registerButton.textContent='Registration Complete';return}}catch(e){setMessage(e.message,'error')}finally{busy=false;if(!nameInput.disabled){registerButton.disabled=false;registerButton.textContent='Register'}}});
 </script></body></html>
