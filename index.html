@@ -21,57 +21,35 @@ const API_URL = " "https://christmas-giveaway-api.mae15cabahug.workers.dev"";
 const qrInput=document.getElementById('qrId'), nameInput=document.getElementById('customerName'), info=document.getElementById('voucherInfo'), registerButton=document.getElementById('registerButton');
 let scanner=null, scanning=false, validVoucher=false, busy=false;
 
-function api(action, values = {}) {
-  return new Promise((resolve, reject) => {
-    const callbackName =
-      "giveawayCb" + Date.now() +
-      Math.floor(Math.random() * 1000000);
 
-    const script = document.createElement("script");
-    let finished = false;
+async function api(action, values = {}) {
+  let response;
 
-    const cleanup = () => {
-      if (finished) return;
-      finished = true;
-      delete window[callbackName];
-      script.remove();
-      clearTimeout(timer);
-    };
-
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error(
-        "API request timed out. Check the deployment URL and access permissions."
-      ));
-    }, 20000);
-
-    window[callbackName] = (data) => {
-      cleanup();
-      resolve(data);
-    };
-
-    script.async = true;
-    script.type = "text/javascript";
-
-    script.onerror = () => {
-      cleanup();
-      reject(new Error(
-        "The browser could not load the giveaway API response. " +
-        "The API may be redirecting or the response may be blocked."
-      ));
-    };
-
-    const params = new URLSearchParams({
-      action,
-      ...values,
-      callback: callbackName,
-      _: String(Date.now())
+  try {
+    response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ action, ...values }),
+      cache: "no-store"
     });
+  } catch (error) {
+    throw new Error(
+      "Could not connect to the giveaway service. Check your internet connection."
+    );
+  }
 
-    script.src = API_URL + "?" + params.toString();
-    document.head.appendChild(script);
-  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      errorData.message || "The giveaway service returned an error."
+    );
+  }
+
+  return response.json();
 }
+
 
 function setMessage(text,kind=''){info.textContent=text;info.className='msg '+kind}
 async function stopScanner(){if(scanner&&scanning){try{await scanner.stop()}catch(e){}scanning=false}}
