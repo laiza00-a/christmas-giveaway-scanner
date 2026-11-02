@@ -20,7 +20,59 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbx3GKXg0cZO_8CAqkK8e-umvRDSdptNngetlFqpVGfI35GNtxHy-eYD5J-6GgMcP0E2/exec";
 const qrInput=document.getElementById('qrId'), nameInput=document.getElementById('customerName'), info=document.getElementById('voucherInfo'), registerButton=document.getElementById('registerButton');
 let scanner=null, scanning=false, validVoucher=false, busy=false;
-function api(action, values={}){return new Promise((resolve,reject)=>{const cb='giveawayCb_'+Date.now()+'_'+Math.floor(Math.random()*1e6);const script=document.createElement('script');const params=new URLSearchParams({action,...values,callback:cb});window[cb]=data=>{cleanup();resolve(data)};function cleanup(){delete window[cb];script.remove();clearTimeout(timer)}script.onerror=()=>{cleanup();reject(new Error('Could not reach the giveaway service. Check your internet connection and try again.'))};const timer=setTimeout(()=>{cleanup();reject(new Error('The giveaway service took too long to respond. Please try again.'))},20000);script.src=API_URL+'?'+params.toString();document.body.appendChild(script)})}
+
+function api(action, values = {}) {
+  return new Promise((resolve, reject) => {
+    const callbackName =
+      "giveawayCb" + Date.now() +
+      Math.floor(Math.random() * 1000000);
+
+    const script = document.createElement("script");
+    let finished = false;
+
+    const cleanup = () => {
+      if (finished) return;
+      finished = true;
+      delete window[callbackName];
+      script.remove();
+      clearTimeout(timer);
+    };
+
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error(
+        "API request timed out. Check the deployment URL and access permissions."
+      ));
+    }, 20000);
+
+    window[callbackName] = (data) => {
+      cleanup();
+      resolve(data);
+    };
+
+    script.async = true;
+    script.type = "text/javascript";
+
+    script.onerror = () => {
+      cleanup();
+      reject(new Error(
+        "The browser could not load the giveaway API response. " +
+        "The API may be redirecting or the response may be blocked."
+      ));
+    };
+
+    const params = new URLSearchParams({
+      action,
+      ...values,
+      callback: callbackName,
+      _: String(Date.now())
+    });
+
+    script.src = API_URL + "?" + params.toString();
+    document.head.appendChild(script);
+  });
+}
+
 function setMessage(text,kind=''){info.textContent=text;info.className='msg '+kind}
 async function stopScanner(){if(scanner&&scanning){try{await scanner.stop()}catch(e){}scanning=false}}
 async function handleScan(decodedText){if(busy)return;const id=String(decodedText||'').trim().toUpperCase();if(!/^PFGJI-[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(id)){setMessage('This QR does not look like a valid giveaway voucher. Please scan the QR code printed on your voucher.','error');return}busy=true;await stopScanner();qrInput.value=id;validVoucher=false;registerButton.disabled=true;setMessage('Checking voucher...');try{const result=await api('lookup',{qrId:id});if(!result.success){setMessage(result.message||'Voucher could not be verified.','error');return}validVoucher=true;registerButton.disabled=false;setMessage('Voucher verified. Customer type: '+result.customerType+'. Enter your full name, then tap Register.','success');nameInput.focus()}catch(e){setMessage(e.message,'error')}finally{busy=false}}
